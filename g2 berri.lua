@@ -30,6 +30,118 @@ local HAS_CONFIG = type(Library.SaveConfig) == "function"
 local CONFIG_NAME = "berri_gakuran"
 
 -- ══════════════════════════════════════════════════════════════════════════════
+-- COMPATIBILITY SHIM: translates IvoryLib API → VEIL Library API
+-- ══════════════════════════════════════════════════════════════════════════════
+local function wrapGroupbox(gb)
+    local w = {}
+    local function cvt(opts)
+        -- opts is either a string (VEIL style) or table (Ivory style)
+        if type(opts) == "string" then return opts, {} end
+        local flag = opts.Flag or opts.Name or ""
+        local cfg = {
+            Text    = opts.Name or opts.Text or flag,
+            Default = opts.Default,
+            Min     = opts.Min,
+            Max     = opts.Max,
+            Rounding= opts.Rounding or 0,
+            Suffix  = opts.Suffix or "",
+            Values  = opts.Options or opts.Values or {},
+            Value   = opts.Default,
+            Callback= opts.Callback,
+        }
+        return flag, cfg
+    end
+    function w:AddToggle(opts)
+        local flag, cfg = cvt(opts)
+        local t = gb:AddToggle(flag, cfg)
+        if opts and opts.Callback then
+            Toggles[flag]:OnChanged(function() opts.Callback(Toggles[flag].Value) end)
+        end
+        return t
+    end
+    function w:AddSlider(opts)
+        local flag, cfg = cvt(opts)
+        local s = gb:AddSlider(flag, cfg)
+        if opts and opts.Callback then
+            Options[flag]:OnChanged(function() opts.Callback(Options[flag].Value) end)
+        end
+        return s
+    end
+    function w:AddButton(opts)
+        if type(opts) == "string" then return gb:AddButton(opts) end
+        return gb:AddButton(opts.Name or "", opts.Callback or function() end)
+    end
+    function w:AddDropdown(opts)
+        local flag, cfg = cvt(opts)
+        cfg.Values = opts.Options or opts.Values or {}
+        cfg.Multi  = false
+        local d = gb:AddDropdown(flag, cfg)
+        if opts and opts.Callback then
+            Options[flag]:OnChanged(function() opts.Callback(Options[flag].Value) end)
+        end
+        return d
+    end
+    function w:AddColorPicker(opts)
+        local flag, cfg = cvt(opts)
+        cfg.Default = opts.Default or Color3.new(1,1,1)
+        local cp = gb:AddLabel(cfg.Text):AddColorPicker(flag, {Default = cfg.Default})
+        if opts and opts.Callback then
+            Options[flag]:OnChanged(function() opts.Callback(Options[flag].Value) end)
+        end
+        return cp
+    end
+    function w:AddKeybind(opts)
+        local flag, cfg = cvt(opts)
+        cfg.Default = opts.Default or Enum.KeyCode.RightShift
+        cfg.NoUI    = false
+        local kb = gb:AddLabel(cfg.Text):AddKeyPicker(flag, cfg)
+        if opts and opts.OnPress then
+            Options[flag]:OnChanged(function() opts.OnPress() end)
+        end
+        return kb
+    end
+    function w:AddInput(opts)
+        local flag, cfg = cvt(opts)
+        return gb:AddInput(flag, cfg)
+    end
+    function w:AddLabel(opts)
+        local text = type(opts) == "string" and opts or (opts and opts.Name or "")
+        return gb:AddLabel(text)
+    end
+    function w:AddDivider()
+        return gb:AddDivider()
+    end
+    return w
+end
+
+local function wrapTab(tab)
+    local w = {}
+    local leftUsed = false
+    function w:AddSubTab(name)
+        -- Alternate left/right groupboxes for each subtab
+        if not leftUsed then
+            leftUsed = true
+            return wrapGroupbox(tab:AddLeftGroupbox(name))
+        else
+            leftUsed = false
+            return wrapGroupbox(tab:AddRightGroupbox(name))
+        end
+    end
+    function w:AddLeftGroupbox(name) return wrapGroupbox(tab:AddLeftGroupbox(name)) end
+    function w:AddRightGroupbox(name) return wrapGroupbox(tab:AddRightGroupbox(name)) end
+    return w
+end
+
+local _origAddTab = Window.AddTab
+Window.AddTab = function(self, opts)
+    local name = type(opts) == "string" and opts or (opts.Name or "Tab")
+    local tab = _origAddTab(self, name)
+    return wrapTab(tab)
+end
+
+
+
+-- ══════════════════════════════════════════════════════════════════════════════
 -- SERVICES / ENV
 -- ══════════════════════════════════════════════════════════════════════════════
 local Players = game:GetService("Players")
