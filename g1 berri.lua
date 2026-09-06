@@ -428,8 +428,8 @@ local PARRY_TIMINGS = {
 	["76318643798983"] = 113494371475132,
 }
 
--- Shim: makes Library:AddAnimEntry resolve timings from PARRY_TIMINGS
--- instead of the missing Game/Timings/SaveManager module
+-- Shim: intercept require("Game/Timings/SaveManager") — executor-safe
+-- package.preload is nil in many Roblox executors, so we hook require directly.
 local _TimingSaveManagerShim = {
 	as = {
 		index = function(self, key)
@@ -441,9 +441,27 @@ local _TimingSaveManagerShim = {
 		end,
 	},
 }
-package.preload["Game/Timings/SaveManager"] = function()
-	return _TimingSaveManagerShim
+
+-- Try package.preload first (works in stock Lua / some executors)
+pcall(function()
+	if package and package.preload then
+		package.preload["Game/Timings/SaveManager"] = function()
+			return _TimingSaveManagerShim
+		end
+	end
+end)
+
+-- Fallback: hook global require so the pcall inside AddAnimEntry gets our shim.
+-- getgenv() ensures it persists across LocalScript boundaries in the executor.
+local _origRequire = require
+local function _patchedRequire(mod, ...)
+	if mod == "Game/Timings/SaveManager" then
+		return _TimingSaveManagerShim
+	end
+	return _origRequire(mod, ...)
 end
+pcall(function() require = _patchedRequire end)
+pcall(function() getgenv().require = _patchedRequire end)
 
 
 local LPH_NO_VIRTUALIZE = function(f) return f end
